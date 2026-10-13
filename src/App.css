@@ -454,6 +454,60 @@ button:disabled {
   line-height: 1.7;
 }
 
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.chart-card {
+  padding: 24px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 8px 25px rgba(29, 71, 41, .035);
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.chart-card-top h3 {
+  margin: 0;
+  font: 800 16px 'Manrope', sans-serif;
+  color: #1b3024;
+}
+
+.chart-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+  background: var(--green-light);
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.chart-container {
+  position: relative;
+  height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-empty {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px 20px;
+}
+
 .journal-section {
   padding-top: 76px;
   padding-bottom: 45px;
@@ -861,6 +915,10 @@ button:disabled {
 
   .nutrition-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
   }
 
   .food-grid {

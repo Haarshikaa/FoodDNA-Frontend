@@ -1,9 +1,29 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent, ChangeEvent } from 'react'
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+} from 'chart.js'
+import { Doughnut, Bar } from 'react-chartjs-2'
 import './App.css'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+ChartJS.register(
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title
+)
 
+const API = import.meta.env.VITE_API_URL || 'https://fooddna-backend.onrender.com';
 type Food = {
   id: number
   food_name: string
@@ -66,6 +86,42 @@ function numeric(value: number | string | null | undefined): number {
   if (value === null || value === undefined || value === '') return 0
   const result = Number(value)
   return Number.isFinite(result) ? result : 0
+}
+
+async function compressImage(file: File, maxDimension = 900, quality = 0.82): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      let { width, height } = img
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width)
+          width = maxDimension
+        } else {
+          width = Math.round((width * maxDimension) / height)
+          height = maxDimension
+        }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve(file)
+        return
+      }
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(
+        (blob) => {
+          resolve(blob || file)
+        },
+        'image/jpeg',
+        quality
+      )
+    }
+    img.onerror = () => resolve(file)
+    img.src = URL.createObjectURL(file)
+  })
 }
 
 function App() {
@@ -162,8 +218,9 @@ function App() {
     setPhotoNutrition(null)
 
     try {
+      const optimizedBlob = await compressImage(photo)
       const formData = new FormData()
-      formData.append('image', photo)
+      formData.append('image', optimizedBlob, 'food.jpg')
 
       const data = await apiRequest('/api/analyze-food-image', {
         method: 'POST',
@@ -201,7 +258,7 @@ function App() {
         meal_type: mealType,
         notes: notes.trim(),
         serving_size_g: size,
-        ...(editingId === null && photoNutrition
+        ...(photoNutrition
           ? {
               nutrition_estimate: {
                 serving_size_g: photoNutrition.servingSizeG,
@@ -241,7 +298,18 @@ function App() {
     setMealType(food.meal_type)
     setNotes(food.notes || '')
     setServingSize(String(numeric(food.serving_size_g) || 100))
-    setPhotoNutrition(null)
+    if (food.calories !== null) {
+      setPhotoNutrition({
+        foodName: food.food_name,
+        servingSizeG: numeric(food.serving_size_g) || 100,
+        calories: numeric(food.calories),
+        protein: numeric(food.protein),
+        carbs: numeric(food.carbs),
+        fat: numeric(food.fat),
+      })
+    } else {
+      setPhotoNutrition(null)
+    }
     setStatus('')
     setError('')
     document.getElementById('meal-form')?.scrollIntoView({ behavior: 'smooth' })
@@ -304,6 +372,51 @@ function App() {
   const estimatedCount = todaysFoods.filter(
     (food) => food.calories !== null
   ).length
+
+  const mealCalories = todaysFoods.reduce<Record<string, number>>(
+    (acc, food) => {
+      const type = food.meal_type || 'Other'
+      acc[type] = (acc[type] || 0) + numeric(food.calories)
+      return acc
+    },
+    { Breakfast: 0, Lunch: 0, Dinner: 0, Snack: 0 }
+  )
+
+  const hasMacroData = totals.protein > 0 || totals.carbs > 0 || totals.fat > 0
+  const hasMealData = Object.values(mealCalories).some((cal) => cal > 0)
+
+  const macroChartData = {
+    labels: ['Protein (g)', 'Carbs (g)', 'Fat (g)'],
+    datasets: [
+      {
+        data: [
+          Number(totals.protein.toFixed(1)),
+          Number(totals.carbs.toFixed(1)),
+          Number(totals.fat.toFixed(1)),
+        ],
+        backgroundColor: ['#218653', '#e5a83b', '#e06a55'],
+        borderColor: ['#175d3a', '#b58428', '#b04a39'],
+        borderWidth: 1,
+      },
+    ],
+  }
+
+  const mealChartData = {
+    labels: ['Breakfast', 'Lunch', 'Dinner', 'Snack'],
+    datasets: [
+      {
+        label: 'Calories (kcal)',
+        data: [
+          Math.round(mealCalories.Breakfast || 0),
+          Math.round(mealCalories.Lunch || 0),
+          Math.round(mealCalories.Dinner || 0),
+          Math.round(mealCalories.Snack || 0),
+        ],
+        backgroundColor: '#218653',
+        borderRadius: 8,
+      },
+    ],
+  }
 
   return (
     <div className="app">
@@ -404,6 +517,64 @@ function App() {
               <div className="nutrition-card-top"><span>Fat</span><span className="metric-icon">◉</span></div>
               <div className="metric-value">{totals.fat.toFixed(1)} <small>g</small></div>
               <p>From logged meals</p>
+            </article>
+          </div>
+
+          <div className="charts-grid">
+            <article className="chart-card">
+              <div className="chart-card-top">
+                <h3>Macronutrient Breakdown</h3>
+                <span className="chart-badge">Daily Ratio</span>
+              </div>
+              <div className="chart-container">
+                {hasMacroData ? (
+                  <Doughnut
+                    data={macroChartData}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { position: 'bottom' },
+                      },
+                    }}
+                  />
+                ) : (
+                  <div className="chart-empty">
+                    <p>Log a meal today to view your macronutrient distribution.</p>
+                  </div>
+                )}
+              </div>
+            </article>
+
+            <article className="chart-card">
+              <div className="chart-card-top">
+                <h3>Calories by Meal Type</h3>
+                <span className="chart-badge">Meal Breakdown</span>
+              </div>
+              <div className="chart-container">
+                {hasMealData ? (
+                  <Bar
+                    data={mealChartData}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                      },
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                          ticks: { precision: 0 },
+                        },
+                      },
+                    }}
+                  />
+                ) : (
+                  <div className="chart-empty">
+                    <p>Log meals to see calorie distribution across the day.</p>
+                  </div>
+                )}
+              </div>
             </article>
           </div>
 
